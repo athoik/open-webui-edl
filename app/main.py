@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.docling_client import fetch_markdown_with_images
 from app.image_processor import replace_images_with_blob_urls
+from app.text_processor import processor as text_processor
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -72,6 +73,9 @@ async def process_document(
         raise HTTPException(status_code=500, detail=f"Image processing error: {exc}")
 
     log.info("Done. Replaced %d image(s) with blob URLs.", image_count)
+
+    # ── Post-process text (clean banners, footers, whitespace, etc.) ──────────
+    clean_markdown = text_processor.process(clean_markdown)
 
     metadata: dict = {"source": filename}
     if mime_type:
