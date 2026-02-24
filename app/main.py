@@ -51,19 +51,34 @@ async def process_document(
 
     filename = unquote(x_filename) if x_filename else "document"
     mime_type = content_type or "application/octet-stream"
+    file_ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
     log.info("Processing '%s' (%s, %d bytes)", filename, mime_type, len(file_bytes))
 
-    # ── Call Docling (embedded images) ────────────────────────────────────────
-    try:
-        raw_markdown = await fetch_markdown_with_images(
-            file_bytes=file_bytes,
-            filename=filename,
-            mime_type=mime_type,
-        )
-    except Exception as exc:
-        log.error("Docling error: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Docling error: {exc}")
+    # ── Short-circuit for plain text / markdown ───────────────────────────────
+    # Skip Docling (no conversion needed) but still run image processing and
+    # text cleanup — the file may already contain embedded base64 images.
+    is_text = (
+        file_ext in ("txt", "md")
+        or (mime_type.startswith("text/") and "html" not in mime_type)
+    )
+    if is_text:
+        log.info("Text file detected — skipping Docling, processing content directly.")
+        try:
+            raw_markdown = file_bytes.decode("utf-8", errors="replace")
+        except Exception:
+            raw_markdown = file_bytes.decode("latin-1", errors="replace")
+    else:
+        # ── Call Docling (embedded images) ────────────────────────────────────
+        try:
+            raw_markdown = await fetch_markdown_with_images(
+                file_bytes=file_bytes,
+                filename=filename,
+                mime_type=mime_type,
+            )
+        except Exception as exc:
+            log.error("Docling error: %s", exc)
+            raise HTTPException(status_code=502, detail=f"Docling error: {exc}")
 
     # ── Extract base64 images → Azure Blob URLs ───────────────────────────────
     try:
